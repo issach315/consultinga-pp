@@ -1,55 +1,113 @@
-# consulting-service
+# Consulting Service
 
-- `consulting-api` — FastAPI backend (Phase 1: JWT authentication)
-- `consulting-ui` — React frontend
+Monorepo for the Consulting SaaS application:
 
-Docker Compose runs both, plus MySQL, Redis, MinIO, and Mailpit. All commands
-below run from this directory.
+- `consulting-api` - FastAPI backend
+- `consulting-ui` - React, TypeScript, and Vite frontend
+- `docker-compose.yml` - local API, UI, Redis, and MinIO services
 
 ## Prerequisites
 
-MySQL runs on the host, not in Compose. Have a MySQL server reachable at
-`localhost:3306` with a database already created, and set `DATABASE_URL` in
-`consulting-api/.env` accordingly (the api container reaches the host via
-`host.docker.internal`).
+Install the following before starting:
 
-## Commands
+- [Git](https://git-scm.com/)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
+- MySQL 8 running on `localhost:3306`
 
-Start everything:
+The Docker workflow is recommended. MySQL runs on the host machine and is not
+included in Docker Compose.
+
+## Clone and run with Docker
+
+### 1. Clone the repository
 
 ```bash
-docker compose up -d
+git clone https://github.com/issach315/consultinga-pp.git
+cd consultinga-pp
 ```
 
-Rebuild after changing a Dockerfile or dependency file:
+### 2. Create the local environment files
+
+macOS/Linux:
+
+```bash
+cp consulting-api/.env.example consulting-api/.env
+cp consulting-ui/.env.example consulting-ui/.env
+```
+
+Windows PowerShell:
+
+```powershell
+Copy-Item consulting-api/.env.example consulting-api/.env
+Copy-Item consulting-ui/.env.example consulting-ui/.env
+```
+
+The `.env` files are ignored by Git. Never commit passwords or production
+credentials.
+
+For local development, update at least these values in
+`consulting-api/.env`:
+
+```dotenv
+DATABASE_URL=mysql+pymysql://root:YOUR_MYSQL_PASSWORD@host.docker.internal:3306/consulting_db
+JWT_SECRET_KEY=replace-with-a-long-random-secret
+```
+
+Keep `DEBUG=true`; valid values are `true` or `false`.
+
+### 3. Create the MySQL database
+
+Sign in to MySQL and create the development database:
+
+```sql
+CREATE DATABASE consulting_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+```
+
+The MySQL user in `DATABASE_URL` must have permission to use this database.
+
+### 4. Start the application
+
+From the repository root, run:
 
 ```bash
 docker compose up -d --build
 ```
 
-View logs:
+Wait for the containers to start, then apply the database migrations:
+
+```bash
+docker compose exec api uv run alembic upgrade head
+```
+
+### 5. Open the application
+
+| Service | URL |
+| --- | --- |
+| Web application | http://localhost:5173 |
+| API | http://localhost:8000 |
+| Swagger API documentation | http://localhost:8000/docs |
+| ReDoc API documentation | http://localhost:8000/redoc |
+| Health check | http://localhost:8000/health |
+| MinIO API | http://localhost:9000 |
+| MinIO console | http://localhost:9001 |
+
+Default development MinIO credentials come from `consulting-api/.env`.
+
+## Useful Docker commands
+
+View container status:
+
+```bash
+docker compose ps
+```
+
+Follow application logs:
 
 ```bash
 docker compose logs -f api
 docker compose logs -f ui
-```
-
-Stop:
-
-```bash
-docker compose down
-```
-
-Stop and remove volumes (Redis/MinIO data):
-
-```bash
-docker compose down -v
-```
-
-Run migrations:
-
-```bash
-docker compose exec api uv run alembic upgrade head
 ```
 
 Run backend tests:
@@ -58,18 +116,73 @@ Run backend tests:
 docker compose exec api uv run pytest
 ```
 
-## URLs
+Rebuild after changing dependencies or a Dockerfile:
 
-| Service | URL |
-| --- | --- |
-| UI | http://localhost:5173 |
-| API | http://localhost:8000 |
-| Swagger | http://localhost:8000/docs |
-| ReDoc | http://localhost:8000/redoc |
-| Health | http://localhost:8000/health |
-| MySQL | localhost:3306 (host) |
-| Redis | localhost:6379 |
-| MinIO API | http://localhost:9000 |
-| MinIO Console | http://localhost:9001 |
-| Mailpit | http://localhost:8025 |
-| Mailpit SMTP | localhost:1025 |
+```bash
+docker compose up -d --build
+```
+
+Stop the services:
+
+```bash
+docker compose down
+```
+
+Stop the services and delete local Redis and MinIO data:
+
+```bash
+docker compose down -v
+```
+
+## Run without Docker
+
+For native development, install these additional tools:
+
+- Python 3.13
+- [uv](https://docs.astral.sh/uv/)
+- Node.js 22 and npm
+- Locally running MySQL and Redis instances
+
+Copy both example environment files as described above. In
+`consulting-api/.env`, change the service hostnames to local addresses:
+
+```dotenv
+DATABASE_URL=mysql+pymysql://root:YOUR_MYSQL_PASSWORD@localhost:3306/consulting_db
+REDIS_URL=redis://localhost:6379/0
+MINIO_ENDPOINT=http://localhost:9000
+```
+
+Start the backend in one terminal:
+
+```bash
+cd consulting-api
+uv sync
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
+```
+
+Start the frontend in another terminal:
+
+```bash
+cd consulting-ui
+npm install
+npm run dev
+```
+
+## Email configuration
+
+Invitation emails require an SMTP provider. Configure the `MAIL_*` variables
+in `consulting-api/.env`. For Gmail, use a Google App Password rather than your
+normal account password. Email-related actions will not deliver messages until
+valid SMTP credentials are configured.
+
+## Troubleshooting
+
+- If the API cannot connect to MySQL, confirm MySQL is running on port `3306`,
+  the database exists, and the username/password in `DATABASE_URL` are correct.
+- When the API runs in Docker, use `host.docker.internal` for the MySQL host.
+  When it runs directly on your machine, use `localhost`.
+- If port `5173`, `8000`, `6379`, `9000`, or `9001` is already in use, stop the
+  conflicting service or change the corresponding port mapping.
+- Check startup errors with `docker compose logs -f api` or
+  `docker compose logs -f ui`.
